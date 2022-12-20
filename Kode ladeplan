@@ -1,0 +1,475 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Nov 14 08:46:51 2022
+@author: Georg
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import ast
+
+
+"""
+Laster inn tidsserien
+"""
+Data_0711 = pd.read_excel('Parkering og forbruk i en fil_uten_værdata.xlsx')
+
+
+"""
+Informasjon er lagret som lister, for at innlastet data skal leses som lister brukes ast
+"""
+
+Data_0711["Ordrenummer biler som kommer"] = [ast.literal_eval(elm) for elm in Data_0711["Ordrenummer biler som kommer"]]
+Data_0711["Ordrenummer biler som drar"] = [ast.literal_eval(elm) for elm in Data_0711["Ordrenummer biler som drar"]]
+Data_0711["Ordrenummer elbiler som kommer"] = [ast.literal_eval(elm) for elm in Data_0711["Ordrenummer elbiler som kommer"]]
+Data_0711["Ordrenummer elbiler som drar"] = [ast.literal_eval(elm) for elm in Data_0711["Ordrenummer elbiler som drar"]]
+Data_0711["Ordrenummer elbiler m/lading som kommer"] = [ast.literal_eval(elm) for elm in Data_0711["Ordrenummer elbiler m/lading som kommer"]]
+Data_0711["Ordrenummer elbiler m/lading som drar"] = [ast.literal_eval(elm) for elm in Data_0711["Ordrenummer elbiler m/lading som drar"]]
+
+#Data_0711["Avreise"] = [ast.literal_eval(elm) for elm in Data_0711["Avreise"]]
+
+"""
+Legger til når bilenen skal dra
+"""
+OrdrenrDrar_0711 = [{} for i in range(len(Data_0711))]
+
+for numElm,elmList in enumerate(Data_0711["Ordrenummer biler som kommer"]):
+    if elmList != []:
+        for elm in elmList:
+            for numElmDrar,elmListDrar in enumerate(Data_0711["Ordrenummer biler som drar"]):
+                if elmListDrar !=[]:
+                    for elmDrar in elmListDrar:
+                        if elm == elmDrar:
+                            OrdrenrDrar_0711[numElm][f"{elm}"] = Data_0711["Tid"][numElmDrar]
+Data_0711["Avreise"] = OrdrenrDrar_0711 
+              
+
+              
+"""
+Operasjon 1 - basis timeeffekt
+"""                            
+
+def operasjon1(Pper,Ptotkurs,AntallLadere):
+    """
+    Pper: 
+        Angir ladeeffekten per lader. Enhet kW.
+    
+    Ptotkurs:
+        Angir effekten til ladeparken. Enhet kW.
+        
+    AntallLadere:
+        Antall parkeringsplasser med lader.
+    
+    Ebehov:
+        Angir energibehovet til bilene i operasjon i oeprasjon 1. Enhet er kWh.
+        
+    MaxLading:
+        Angir hvor stor andel av total timeeffekt timeeffekten til lading kan utgjøre. 
+    """
+    
+    #PtotKurs = 428 #kW - maksimale effekten på kursen
+    #Pper = 1.7 #kW - maksimale per lader 
+    Ebehov = 40
+    #Ebehov = np.random.normal(40,10) #kWh - denne kan varieres- lag liste med varierte verdier
+    #AntallLadere = 84
+    Maxlading = 1 #Hvor stor andel elbilen maksimalt kan utgjøre 
+
+
+    #OmbordladerEffektivitet = 1 #DENNE MÅ INN I KODEN
+
+    AntallForkortet = 0 #til inspeksjonsformål - kan nok tas vekk
+
+    """
+    Ladere:
+        DataFrame hvor informasjonen om de parkerte bilene lagres. Består av kolonnene: 
+            Ordrenummer:
+                Ordrenummer til bilen som parkerer.
+            Energibehov ved ankomst:
+                Angir energibehovet til bilen ved ankomst. Enhet kWh.
+            Utestående energibehov:
+                Angir energibehovet til bilen i tidssteget. Enhet kWh.
+            Ankomst:
+                Ankomsttidspunkt til bilen.
+            Hentes:
+                Hentetidspunkt til bilen.
+            Fulladet dato:
+                Tidspunktet bilen ble fulladet.
+    """
+    Ladere = pd.DataFrame(zip(["Ledig" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))]), columns= ["Ordrenummer","Energibehov ved ankomst", "Utestående energibehov","Ankomst", "Hentes","Fulladet dato"])
+    
+    
+    """
+    BruktEffekt:
+        I operasjon 1 er BruktEffekt timeeffekten til lading.
+    """
+    BruktEffekt = [0 for elm in range(len(Data_0711))]
+    
+    for num in range(len(Data_0711)): 
+        """
+        For-løkke for hvert tidsteg
+        """
+        for numElm,elm in enumerate(Data_0711['Ordrenummer elbiler m/lading som kommer'][num]): #looper gjennom listen
+            """
+            For hvert tidssteg foretas det en for-løkke på listen med ankommende biler
+            """
+
+            for lengde in range(AntallLadere):
+                """
+                Sjekker om det er plass til nyankommet bil
+                Ved plass, ankommet bil blir tildelt første ledige plass i parkeringen
+                """
+                if Ladere["Ordrenummer"][lengde] == "Ledig":
+                    Ladere["Ordrenummer"][lengde] = elm
+                    Ladere["Ankomst"][lengde] = Data_0711["Tid"][num]
+                    Ladere["Energibehov ved ankomst"][lengde] = Ebehov
+                    Ladere["Utestående energibehov"][lengde] = Ebehov
+                    Ladere["Hentes"][lengde] = Data_0711["Avreise"][num][str(elm)]
+                    break
+        
+        justert = 0 #Til inspeksjonsformål. For å telle antall ganger ladeeffekten ble begrenset av total timeeffekt       
+        for numSort, behov in enumerate(Ladere["Utestående energibehov"]):
+            if Ladere["Ordrenummer"][numSort] !="Ledig" and behov !=0:
+                if behov -Pper >=0: #hvis energibehovet er større enn hva som kan leveres per lader per time
+                    if BruktEffekt[num] + Pper <= Data_0711["Forbruk (kWt)"][num]*Maxlading:
+                        Ladere["Utestående energibehov"][numSort] += -Pper #Så kjører laderen på full effekt og energibehovet minker med Pper * 1h
+                        BruktEffekt[num] += Pper #brukt effekt øker med Pper 
+                    else:
+                        justert +=1
+                        Ladere["Utestående energibehov"][numSort] += -(Data_0711["Forbruk (kWt)"][num]*Maxlading - BruktEffekt[num])
+                        BruktEffekt[num] += Data_0711["Forbruk (kWt)"][num]*Maxlading - BruktEffekt[num]
+                        
+                else: #Energiehovet er mindre hva laderen kan gi
+                    if BruktEffekt[num] + behov <= Data_0711["Forbruk (kWt)"][num]*Maxlading:
+                        BruktEffekt[num] += behov
+                        Ladere["Utestående energibehov"][numSort] = 0
+                        Ladere["Fulladet dato"][numSort] = Data_0711["Tid"][num]
+                    else:
+                        BruktEffekt[num] += (Data_0711["Forbruk (kWt)"][num]*Maxlading - BruktEffekt[num])
+                        Ladere["Utestående energibehov"][numSort] += -(Data_0711["Forbruk (kWt)"][num]*Maxlading - BruktEffekt[num])
+                        Ladere["Fulladet dato"][numSort] = Data_0711["Tid"][num]
+                        print((Data_0711["Forbruk (kWt)"][num]*Maxlading - BruktEffekt[num]))
+        if justert != 0:
+            AntallForkortet +=1
+        
+        """
+        Deretter går koden igjennom biler som drar i tidssteget
+        Hvis bilen som drar står med lader (altså er i DataFramen Ladere) legges bilen i LadetDratt og fjernes fra Ladere
+        """    
+        
+        for elm in Data_0711['Ordrenummer elbiler m/lading som drar'][num]:
+            if elm in list(Ladere["Ordrenummer"]):
+                Ladere.loc[Ladere.index[Ladere["Ordrenummer"] == elm],["Ordrenummer","Energibehov ved ankomst", "Utestående energibehov","Ankomst", "Hentes","Fulladet dato"]] = ["Ledig","","","","",""]
+
+    Data_0711["Timeseffekt lading"] = BruktEffekt
+        
+
+    Data_0711["Lading som % av forbruk"] = [lading/forbruk for lading, forbruk in zip(BruktEffekt,Data_0711["Forbruk (kWt)"])]
+
+    print(max(Data_0711["Lading som % av forbruk"]))
+
+    BasisForbruk = [tot - lad for lad,tot in zip(Data_0711["Timeseffekt lading"],Data_0711["Forbruk (kWt)"])]
+    Data_0711["Basis forbruk"] = BasisForbruk
+
+
+"""
+Operasjon 2
+"""
+
+def operasjon2(Pper,PtotKurs,Elbilandel,AntallLadere,PtotMaks,gjennomsnitt,standardavvik):
+    for numPtot,Ptot in enumerate([PtotMaks]): #skalvære: [PtotMaks,Ptot_måned]
+            Ptot_måned = {} 
+            Ptot_maks = {} 
+            Ladere = pd.DataFrame(zip(["Ledig" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))]), columns= ["Ordrenummer","Energibehov ved ankomst", "Utestående energibehov","Ankomst", "Hentes","Fulladet dato"])
+            BruktEffekt = [0 for elm in range(len(Data_0711_7))]
+            IkkeFulladet = [0 for elm in range(len(Data_0711_7))]
+            
+            for num in range(len(Data_0711_7)): #kjører igjennom tidsserien
+                for numElm,elm in enumerate(list(set(Data_0711_7['Ordrenummer biler som kommer'][num]))): #looper gjennom listen
+                    ErElbilDict[elm] = str(np.random.choice(["Ja","Nei"], p= [Elbilandel,1-Elbilandel]))
+                    if ErElbilDict[elm] == "Ja":
+                        EbehovDict[elm] = np.random.normal(gjennomsnitt,standardavvik)
+                        if "Ledig" in list(Ladere["Ordrenummer"]):
+                            lengde = (list(Ladere[Ladere["Ordrenummer"] == "Ledig"].index)[0])
+                            Ladere["Ordrenummer"][lengde] = elm
+                            Ladere["Ankomst"][lengde] = Data_0711_7["Tid"][num]
+                            Ladere["Energibehov ved ankomst"][lengde] = EbehovDict[elm]
+                            Ladere["Utestående energibehov"][lengde] = EbehovDict[elm]
+                            Ladere["Hentes"][lengde] = Data_0711_7["Avreise"][num][str(elm)]
+
+                LadereSortert = Ladere[Ladere["Ordrenummer"] != "Ledig"].sort_values("Hentes") #Lager en DataFrame i loopen, som oppdateres for hvert tidssteg tar uttgangspunkt i en sortert versjon av DataFramen Ladere
+
+                Effekt = Ptot[f"{Data_0711_7.Måned[num]} {Data_0711_7.År[num]}"] #DENNE ER RIKTIG
+                        
+                for numSort, (indeks, behov) in enumerate(zip(LadereSortert.index,LadereSortert["Utestående energibehov"])):
+                    if Effekt == 0: #hvis Effekt er 0, så kjøres ikke loopen
+                        break
+
+                    elif behov !=0: #hvis energibehovet ikke er null kjøres følgende steg
+                        if behov -Pper >=0: #hvis energibehovet er større enn hva som kan leveres per lader per time
+                            if Effekt - Pper >=0: #Hvis kursen totale effekt (trekker fra effekt etterhvert som den beslaglegges) er større enn effekten per
+                                Ladere["Utestående energibehov"][indeks] += -Pper #Så kjører laderen på full effekt og energibehovet minker med Pper * 1h
+                                Effekt += - Pper #kursen totale effekt minker med Pper
+                                BruktEffekt[num] += Pper #brukt effekt øker med Pper
+
+                            else: #hvis effekten som er på kursen (Effekt) er mindre enn hva hver lader kan gi, så brukes resten av effekt på denne laderen
+                                Ladere["Utestående energibehov"][indeks] += - Effekt #
+                                BruktEffekt[num] += Effekt
+                                Effekt = 0
+                                
+                        else: #Energiehovet er mindre hva laderen kan gi                    
+                            if Effekt - behov <= 0:
+                                Ladere["Utestående energibehov"][indeks] += -Effekt
+                                BruktEffekt[num] += Effekt
+                                Effekt = 0
+                            else:
+                                Effekt += - Ladere["Utestående energibehov"][indeks]
+                                BruktEffekt[num] += Ladere["Utestående energibehov"][indeks]
+                                Ladere["Utestående energibehov"][indeks] = 0
+                                Ladere["Fulladet dato"][indeks] = Data_0711_7["Tid"][num]
+
+                for elm in list(set(Data_0711_7['Ordrenummer biler som drar'][num])):
+                    if elm in list(Ladere["Ordrenummer"]):
+                        for hent,av,en,enAn in zip(Ladere.loc[Ladere["Ordrenummer"] == elm]["Hentes"],Ladere.loc[Ladere["Ordrenummer"] == elm]["Ankomst"],Ladere.loc[Ladere["Ordrenummer"] == elm]["Utestående energibehov"],Ladere.loc[Ladere["Ordrenummer"] == elm]["Energibehov ved ankomst"]):
+                            if (hent-av) > (timedelta(hours=math.ceil(enAn/Pper))) and en!= 0: #Her kan begrensningen være energibehov delt på effekt = minimum antall timer før det 
+                                IkkeFulladet[num] +=1
+
+                        Ladere.loc[Ladere.index[Ladere["Ordrenummer"] == elm],["Ordrenummer","Energibehov ved ankomst", "Utestående energibehov","Ankomst", "Hentes","Fulladet dato"]] = ["Ledig","","","","",""]
+            Data_0711_7[f"Brukt Effekt uten styring monte"] = BruktEffekt
+            Data_0711_7[f"total Effekt uten styring monte"] = [basis + lading for basis,lading in zip(Data_0711_7["Basis forbruk"],Data_0711_7[f"Brukt Effekt uten styring monte"])]
+
+            for elmÅr in (list(set(list(Data_0711_7["År"])))):
+                for elmMån in (list(set(list(Data_0711_7["Måned"])))):
+                    #EffektUten.append(Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),f"total Effekt uten styring"].max())
+                    #EffektMed.append(Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),f"total Effekt uten styring"].mean())
+                    Ptot_maks[f"{elmMån} {elmÅr}"] = (Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),f"total Effekt uten styring monte"].max())
+                    if Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),f"total Effekt uten styring monte"].mean() >= Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),"Basis forbruk"].max():
+                        Ptot_måned[f"{elmMån} {elmÅr}"] = (Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),f"total Effekt uten styring monte"].mean())
+                        BestemteTariff[f"{elmMån} {elmÅr}"].append(1)
+                    else:
+                        Ptot_måned[f"{elmMån} {elmÅr}"] = Data_0711_7.loc[(Data_0711_7["Måned"] == elmMån) & (Data_0711_7["År"] == elmÅr),"Basis forbruk"].max()
+                        BestemteTariff[f"{elmMån} {elmÅr}"].append(0)
+            Ptot_månedOversikt.append(Ptot_måned)
+            Ptot_maksOversikt.append(Ptot_maks)
+    return Ptot_måned
+
+
+
+"""
+Operasjon 3
+"""
+def operasjon3(Ptot_måned,OverMaks,monte):
+    for numPtot,Ptot in enumerate([Ptot_måned]): #skalvære: [PtotMaks,Ptot_måned]
+            Ladere = pd.DataFrame(zip(["Ledig" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))],["" for elm in range((AntallLadere))]), columns= ["Ordrenummer","Energibehov ved ankomst", "Utestående energibehov","Ankomst", "Hentes","Fulladet dato"])
+            IkkeFulladet = [0 for elm in range(len(Data_0711_7))]
+            IkkeFulladetEnergi = [0 for elm in range(len(Data_0711_7))]
+            BruktEffekt = [0 for elm in range(len(Data_0711_7))]
+            BruktEffektTotal = [0 for elm in range(len(Data_0711_7))] #Med basisforbruk
+            DrarforTidlig = [0 for elm in range(len(Data_0711_7))] #kun til inspeksjonsformål!!
+
+            AntallParkerte = 0
+            StodMedLader = 0
+            AntallParkerteAlle = 0
+            AntallParkerteListe = [0 for elm in range(len(Data_0711_7))]
+            AntallParkerteListeAlle = [0 for elm in range(len(Data_0711_7))]
+            AntallParkerteOrd = []
+            AntallKommer = [0 for elm in range(len(Data_0711_7))]
+            AntallDrar = [0 for elm in range(len(Data_0711_7))]
+            EnergiBehovIBiler = []
+
+            for num in range(len(Data_0711_7)): #kjører igjennom tidsserien
+
+                for numElm,elm in enumerate(list(set(Data_0711_7['Ordrenummer biler som kommer'][num]))): #looper gjennom listen
+                    AntallParkerteAlle += 1
+                    AntallParkerteOrd.append(elm)
+                    if ErElbilDict[elm] == "Ja": 
+                        if "Ledig" in list(Ladere["Ordrenummer"]):
+                            AntallKommer[num] += 1
+                            AntallParkerte += 1
+                            StodMedLader +=1
+                            lengde = (list(Ladere[Ladere["Ordrenummer"] == "Ledig"].index)[0])
+                            Ladere["Ordrenummer"][lengde] = elm
+                            Ladere["Ankomst"][lengde] = Data_0711_7["Tid"][num]
+                            Ladere["Energibehov ved ankomst"][lengde] = EbehovDict[elm]
+                            Ladere["Utestående energibehov"][lengde] = EbehovDict[elm]
+                            Ladere["Hentes"][lengde] = Data_0711_7["Avreise"][num][str(elm)]
+
+                LadereSortert = Ladere[Ladere["Ordrenummer"] != "Ledig"].sort_values("Hentes") #Lager en DataFrame i loopen, som oppdateres for hvert tidssteg tar uttgangspunkt i en sortert versjon av DataFramen Ladere
+                Effekt = Ptot[f"{Data_0711_7.Måned[num]} {Data_0711_7.År[num]}"]*OverMaks #varierer maks effekten per måned
+                Effekt += - Data_0711_7["Basis forbruk"][num]
+                BruktEffektTotal[num] +=Data_0711_7["Basis forbruk"][num]
+
+                        
+                for numSort, (indeks, behov) in enumerate(zip(LadereSortert.index,LadereSortert["Utestående energibehov"])):
+                    if Effekt == 0: #hvis Effekt er 0, så kjøres ikke loopen
+                        break
+        
+                    elif behov !=0: #hvis energibehovet ikke er null kjøres følgende steg
+                        if behov -Pper >=0: #hvis energibehovet er større enn hva som kan leveres per lader per time
+                            if Effekt - Pper >=0: #Hvis kursen totale effekt (trekker fra effekt etterhvert som den beslaglegges) er større enn effekten per
+                                Ladere["Utestående energibehov"][indeks] += -Pper #Så kjører laderen på full effekt og energibehovet minker med Pper * 1h
+                                Effekt += - Pper #kursen totale effekt minker med Pper
+                                BruktEffekt[num] += Pper 
+                                BruktEffektTotal[num] += Pper
+        
+                            else: #hvis effekten som er på kursen (Effekt) er mindre enn hva hver lader kan gi, så brukes resten av effekt på denne laderen
+                                Ladere["Utestående energibehov"][indeks] += - Effekt
+                                BruktEffekt[num] += Effekt
+                                BruktEffektTotal[num] += Effekt
+                                Effekt = 0
+                                
+                        else: #Energiehovet er mindre hva laderen kan gi                    
+                            if Effekt - behov <= 0:
+                                Ladere["Utestående energibehov"][indeks] += -Effekt
+                                BruktEffekt[num] += Effekt
+                                BruktEffektTotal[num] += Effekt
+                                Effekt = 0
+                            else:
+                                Effekt += - Ladere["Utestående energibehov"][indeks]
+                                BruktEffekt[num] += Ladere["Utestående energibehov"][indeks]
+                                BruktEffektTotal[num] += Ladere["Utestående energibehov"][indeks]
+                                Ladere["Utestående energibehov"][indeks] = 0
+                                Ladere["Fulladet dato"][indeks] = Data_0711_7["Tid"][num]
+                for elm in list(set(Data_0711_7['Ordrenummer biler som drar'][num])):
+                    if elm in AntallParkerteOrd:
+                        AntallParkerteAlle -=1
+
+                    if elm in list(Ladere["Ordrenummer"]):
+                        AntallDrar[num] +=1
+                        AntallParkerte -=1 
+
+                    if elm in list(Ladere["Ordrenummer"]):
+
+                        for hent,av,en,enAn in zip(Ladere.loc[Ladere["Ordrenummer"] == elm]["Hentes"],Ladere.loc[Ladere["Ordrenummer"] == elm]["Ankomst"],Ladere.loc[Ladere["Ordrenummer"] == elm]["Utestående energibehov"],Ladere.loc[Ladere["Ordrenummer"] == elm]["Energibehov ved ankomst"]):
+                            if (hent-av) > (timedelta(hours=math.ceil(enAn/Pper))) and en!= 0: #Her kan begrensningen være energibehov delt på effekt = minimum antall timer før det 
+
+                                IkkeFulladet[num] +=1
+                                #Antall_1 +=1
+                                IkkeFulladetEnergi[num] +=en
+                            if en!=0:
+                              DrarforTidlig[num] +=en
+                        Ladere.loc[Ladere.index[Ladere["Ordrenummer"] == elm],["Ordrenummer","Energibehov ved ankomst", "Utestående energibehov","Ankomst", "Hentes","Fulladet dato"]] = ["Ledig","","","","",""]
+                AntallParkerteListe[num] = AntallParkerte
+                AntallParkerteListeAlle[num] = AntallParkerteAlle
+                EnergiBehovIBiler.append(Ladere.loc[Ladere["Utestående energibehov"]!="","Utestående energibehov"].sum())
+
+            Utestående.append(Ladere.loc[Ladere["Utestående energibehov"]!="","Utestående energibehov"].sum())
+            StodforkortVerdi[0].append(sum(DrarforTidlig))
+    print(StodMedLader)
+
+    if sum(IkkeFulladet) ==0:
+        print(monte,f"Alle var fulladet ved {OverMaks}")
+        if OverMaks !=1:
+            Data_0711_7[f"Brukt Effekt {OverMaks} {monte}"] = BruktEffekt
+            Data_0711_7[f"Brukt Effekt total {OverMaks} {monte}"] = BruktEffektTotal
+            Data_0711_7[f"Brukt Effekt uten styring {monte}"] = Data_0711_7[f"Brukt Effekt uten styring monte"]
+            Data_0711_7[f"total Effekt uten styring {monte}"] = Data_0711_7[f"total Effekt uten styring monte"]
+            Data_0711_7[f"Antall Parkerte Liste {monte}"] = AntallParkerteListe
+            Data_0711_7[f"Antall Parkerte Liste Alle {monte}"] = AntallParkerteListeAlle
+            Data_0711_7[f"Energi Behov I Biler {OverMaks} {monte}"] = EnergiBehovIBiler
+
+
+    else:
+        print(monte,f"Ikke alle var fulladet ved {OverMaks}")
+        print("Antall ikke fulladet:",sum(IkkeFulladet),"Ikke dekket energibehkv energibehov:",sum(IkkeFulladetEnergi))
+        IkkeFullGanger[0] +=1
+        IkkeFullGangerVerdi[0].append(sum(IkkeFulladet))
+        IkkeFullGangerAntall[0].append(sum(IkkeFulladetEnergi))
+        Data_0711_7[f"Brukt Effekt {OverMaks} {monte}"] = BruktEffekt
+        Data_0711_7[f"Brukt Effekt total {OverMaks} {monte}"] = BruktEffektTotal
+        Data_0711_7[f"Brukt Effekt uten styring {monte}"] = Data_0711_7[f"Brukt Effekt uten styring monte"]
+        Data_0711_7[f"total Effekt uten styring {monte}"] = Data_0711_7[f"total Effekt uten styring monte"]
+        Data_0711_7[f"Antall Parkerte Liste {monte}"] = AntallParkerteListe
+        Data_0711_7[f"Antall Parkerte Liste Alle {monte}"] = AntallParkerteListeAlle
+        Data_0711_7[f"Energi Behov I Biler {OverMaks} {monte}"] = EnergiBehovIBiler
+    return IkkeFulladet
+
+
+import math
+from datetime import datetime, timedelta
+import time
+"""
+Å GJØRE - SJEKK OM EBEHOV ENDRER SEG!
+"""
+
+
+"""
+Innstillbare parametere:
+    Ptot - Effektuttaket til alle 250 laderne
+    
+    Pper - Effektuttaket per lader
+    
+    Ebehov - Energibehovet til hver el-bil som plugger seg inn:
+        Normalfordeling, med 40 som miodt - finn riktige begreper
+        
+    Elbilandel - simuleringen genereres det tilfeldig om en bil er elbil eller ikke:
+        Denne kan økes
+    
+    AntallLadere - Antall ladere som er tilgjengelig
+"""
+
+PtotKurs = 428 #kW - maksimale effekten på kursen ved trefase lading
+Pper = 11 #kW - maksimale per lader 
+
+Elbilandel = 0.25
+
+#Ebehov = [np.random.normal(40,10) for elm in range(len(Data_0711_7))] #kWh - i loop
+#ErElbil = [str(np.random.choice(["Ja","Nei"], p= [Elbilandel,1-Elbilandel])) for elm in range(len(Data_0711_7))]
+
+AntallLadere = 250
+
+OmbordladerEffektivitet = 1 #DENNE MÅ INN I KODEN
+
+"""
+PtotMaks settes som dict med PtotKurs hver måned
+Dette for at koden skal være generisk og funkemed månedsverdier
+"""
+
+
+
+operasjon1(1.7,428,84)
+
+Data_0711_7 = Data_0711[14196:25162] 
+Data_0711_7 = Data_0711_7.reset_index(drop = True)
+
+PtotMaks ={}
+EbehovDict = {}
+BestemteTariff = {}
+for år in (list(set(list(Data_0711_7["År"])))):
+    for mån in (list(set(list(Data_0711_7["Måned"])))):
+        PtotMaks[f"{mån} {år}"] = PtotKurs
+        BestemteTariff[f"{mån} {år}"] = []
+        
+Ptot_måned = {} #Her legges gjennomsnitt energibruk fra forrige måned
+
+
+start_time = time.time()
+ErElbilDict = {}
+Ptot_månedOversikt = []
+Ptot_maksOversikt = []
+
+Utestående = []
+Utestående_101 = []
+Antall_1 = 0
+Antall_105 = 0
+Gjsnitt=40
+std = 10
+
+IkkeFullGanger = [0,0,0,0,0]
+StodforkortVerdi = [[],[],[],[],[],[]]
+IkkeFullGangerVerdi = [[],[],[],[],[],[]]
+IkkeFullGangerAntall = [[],[],[],[],[],[]]
+for monte in range(1):
+    return2 = operasjon2(Pper,PtotKurs,Elbilandel,AntallLadere,PtotMaks,Gjsnitt,std)
+    return3 = (operasjon3(return2,1,monte))
+    if max(return3) !=0:
+        return3 = operasjon3(return2,1.01,monte)
+        if max(return3) !=0:
+            return3 = operasjon3(return2,1.02,monte)
+            if max(return3) !=0:
+                return3 = operasjon3(return2,1.03,monte)
+                if max(return3) !=0:
+                    return3 = operasjon3(return2,1.04,monte)
+                    if max(return3) !=0:
+                        return3 = operasjon3(return2,1.05,monte)
+    print("--- %s seconds ---" % (time.time() - start_time))
+
