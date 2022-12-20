@@ -387,10 +387,6 @@ def operasjon3(Ptot_måned,OverMaks,monte):
 import math
 from datetime import datetime, timedelta
 import time
-"""
-Å GJØRE - SJEKK OM EBEHOV ENDRER SEG!
-"""
-
 
 """
 Innstillbare parametere:
